@@ -502,7 +502,7 @@ class Program
         return null;
     }
 
-    static async Task<string> RunOcrOnImageBytesAsync(byte[] imageBytes)
+    static Task<string> RunOcrOnImageBytesAsync(byte[] imageBytes)
     {
         try
         {
@@ -537,7 +537,7 @@ class Program
             if (string.IsNullOrWhiteSpace(tessDataPath))
             {
                 Console.WriteLine("    [OCR Notice]: tessdata not found. Install Tesseract or place eng.traineddata in a tessdata folder (project, TESSDATA_PREFIX, or standard Tesseract install path).");
-                return string.Empty;
+                return Task.FromResult(string.Empty);
             }
 
             using var engine = new TesseractEngine(tessDataPath, "eng", EngineMode.Default);
@@ -550,12 +550,12 @@ class Program
                 Console.WriteLine("    [OCR Notice]: Tesseract OCR returned no text.");
             }
 
-            return resultText ?? string.Empty;
+            return Task.FromResult(resultText ?? string.Empty);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"    [OCR Image Error Details]: {ex.GetType().Name}: {ex.Message}");
-            return string.Empty;
+            return Task.FromResult(string.Empty);
         }
     }
 
