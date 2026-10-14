@@ -11,6 +11,7 @@ enum DocumentType
     DrivingLicence,
     Rental,
     BankStatement,
+    AtoStatement,
     Unknown
 }
 
@@ -133,6 +134,11 @@ class Program
 
                 switch (docType)
                 {
+                    case DocumentType.AtoStatement:
+                        ProcessingReportEntries.Add($"CLASSIFY: {fileName} -> {docType}");
+                        ProcessAtoStatement(directoryPath, filePath, extractedText);
+                        break;
+
                     case DocumentType.Passport:
                     case DocumentType.DrivingLicence:
                         ProcessingReportEntries.Add($"CLASSIFY: {fileName} -> {docType}");
@@ -947,6 +953,11 @@ class Program
             (combined.Contains("statement") && (combined.Contains("bsb") || combined.Contains("account number") || combined.Contains("acc no") || combined.Contains("opening balance") || combined.Contains("closing balance") || combined.Contains("transaction"))))
         {
             return DocumentType.BankStatement;
+        }
+
+        if (combined.Contains("ato statement"))
+        {
+            return DocumentType.AtoStatement;
         }
 
         // rental handled earlier
