@@ -1,5 +1,15 @@
 bin/
 obj/
+publish/
+*.zip
+*.user
+*.vs/
+*.suo
+TestResults/
+_ReSharper*/
+tessdata/
+*.logbin/
+obj/
 .vs/
 *.user
 *.suo

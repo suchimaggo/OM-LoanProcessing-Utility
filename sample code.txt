@@ -1,0 +1,291 @@
+namespace LoanProcessing_Utility;
+
+using System.Text;
+using System.Text.RegularExpressions;
+using DocumentFormat.OpenXml.Packaging;
+using UglyToad.PdfPig;
+
+internal static class Program
+{
+    internal static readonly string[] SupportedExtensions = new[]
+    {
+        ".pdf",
+        ".docx",
+        ".txt",
+        ".rtf",
+        ".csv",
+        ".html",
+        ".htm"
+    };
+
+    private static void Main(string[] args)
+    {
+        var folderPath = args.FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            Console.Write("Enter folder location to scan: ");
+            folderPath = Console.ReadLine();
+        }
+
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            Console.WriteLine("No folder path was provided.");
+            return;
+        }
+
+        if (!Directory.Exists(folderPath))
+        {
+            Console.WriteLine($"Folder not found: {folderPath}");
+            return;
+        }
+
+        Console.WriteLine($"Scanning folder: {folderPath}");
+
+        var processor = new LoanFileProcessor();
+        processor.ProcessFolder(folderPath);
+
+        Console.WriteLine("Processing complete.");
+    }
+}
+
+internal sealed class LoanFileProcessor
+{
+    public void ProcessFolder(string folderPath)
+    {
+        var files = Directory
+            .GetFiles(folderPath)
+            .Where(file => Program.SupportedExtensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase))
+            .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (files.Count == 0)
+        {
+            Console.WriteLine("No supported files found in the selected folder.");
+            return;
+        }
+
+        Console.WriteLine($"Found {files.Count} supported files.");
+
+        foreach (var file in files)
+        {
+            ProcessFile(file, folderPath);
+        }
+    }
+
+    private void ProcessFile(string filePath, string rootFolder)
+    {
+        try
+        {
+            var extractedText = ExtractText(filePath);
+            if (string.IsNullOrWhiteSpace(extractedText))
+            {
+                Console.WriteLine($"Skipped: {Path.GetFileName(filePath)} (no readable content found)");
+                return;
+            }
+
+            var classification = ClassifyDocument(extractedText, filePath);
+            var targetDirectory = Path.Combine(rootFolder, classification.FolderName);
+            Directory.CreateDirectory(targetDirectory);
+
+            var originalExtension = Path.GetExtension(filePath);
+            var employerName = SanitizeForFileName(classification.EmployerName);
+            var period = SanitizeForFileName(classification.Period);
+            var documentType = SanitizeForFileName(classification.DocumentTypeName);
+
+            string baseFileName;
+            if (documentType.Equals("SalarySlip", StringComparison.OrdinalIgnoreCase))
+            {
+                baseFileName = $"{employerName}_SalarySlip_{period}";
+            }
+            else
+            {
+                baseFileName = $"{employerName}_{documentType}_{employerName}_{period}";
+            }
+            var targetPath = Path.Combine(targetDirectory, $"{baseFileName}{originalExtension}");
+
+            var counter = 1;
+            while (File.Exists(targetPath))
+            {
+                targetPath = Path.Combine(targetDirectory, $"{baseFileName}_{counter}{originalExtension}");
+                counter++;
+            }
+
+            File.Move(filePath, targetPath);
+            Console.WriteLine($"Moved: {Path.GetFileName(filePath)} -> {Path.GetFileName(targetPath)}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to process {Path.GetFileName(filePath)}: {ex.Message}");
+        }
+    }
+
+    private static string ExtractText(string filePath)
+    {
+        var extension = Path.GetExtension(filePath);
+
+        return extension.ToLowerInvariant() switch
+        {
+            ".pdf" => ExtractPdfText(filePath),
+            ".docx" => ExtractDocxText(filePath),
+            ".txt" => File.ReadAllText(filePath),
+            ".rtf" => File.ReadAllText(filePath),
+            ".csv" => File.ReadAllText(filePath),
+            ".html" => File.ReadAllText(filePath),
+            ".htm" => File.ReadAllText(filePath),
+            _ => string.Empty
+        };
+    }
+
+    private static string ExtractPdfText(string filePath)
+    {
+        var textBuilder = new StringBuilder();
+
+        using var document = PdfDocument.Open(filePath);
+        foreach (var page in document.GetPages())
+        {
+            textBuilder.AppendLine(page.Text);
+        }
+
+        return textBuilder.ToString();
+    }
+
+    private static string ExtractDocxText(string filePath)
+    {
+        using var document = WordprocessingDocument.Open(filePath, false);
+        var body = document.MainDocumentPart?.Document.Body;
+        return body?.InnerText ?? string.Empty;
+    }
+
+    private static DocumentClassification ClassifyDocument(string text, string filePath)
+    {
+        var normalizedText = NormalizeWhitespace(text);
+        var lowerText = normalizedText.ToLowerInvariant();
+        var fileName = Path.GetFileNameWithoutExtension(filePath);
+
+        var documentType = "GeneralDocument";
+        var folderName = "Other Documents";
+
+        if (lowerText.Contains("salary") || lowerText.Contains("payslip") || lowerText.Contains("pay slip"))
+        {
+            documentType = "SalarySlip";
+            folderName = "Salary Slips";
+        }
+        else if (lowerText.Contains("bank statement") || lowerText.Contains("account statement") || lowerText.Contains("banking"))
+        {
+            documentType = "BankStatement";
+            folderName = "Bank Statements";
+        }
+        else if (lowerText.Contains("tax") || lowerText.Contains("tax return"))
+        {
+            documentType = "TaxDocument";
+            folderName = "Tax Documents";
+        }
+        else if (lowerText.Contains("rental") || lowerText.Contains("lease agreement"))
+        {
+            documentType = "RentalAgreement";
+            folderName = "Rental Agreements";
+        }
+        else if (lowerText.Contains("utility") || lowerText.Contains("water bill") || lowerText.Contains("electricity"))
+        {
+            documentType = "UtilityBill";
+            folderName = "Utility Bills";
+        }
+
+        var employerName = ExtractEmployerName(normalizedText, fileName);
+        var period = ExtractPeriod(normalizedText, fileName);
+
+        return new DocumentClassification(documentType, folderName, employerName, period);
+    }
+
+    private static string ExtractEmployerName(string text, string fileName)
+    {
+        var patterns = new[]
+        {
+            @"(?:employer|company|organisation|organization|payroll)[\s:-]+([A-Za-z0-9&.'\-/ ]{2,80})",
+            @"(?:employer name|company name)[\s:-]+([A-Za-z0-9&.'\-/ ]{2,80})",
+            @"([A-Z][A-Za-z0-9&.'\-/ ]{2,60}\s(?:Pty|Ltd|Limited|LLC|Inc|Incorporated|Holdings))"
+        };
+
+        foreach (var pattern in patterns)
+        {
+            var match = Regex.Match(text, pattern, RegexOptions.IgnoreCase | RegexOptions.Multiline);
+            if (match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value))
+            {
+                var value = match.Groups[1].Value.Trim();
+                if (value.Length > 2 && !value.Contains("\n"))
+                {
+                    return value;
+                }
+            }
+        }
+
+        var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length < 3 || trimmed.Length > 80)
+            {
+                continue;
+            }
+
+            if (trimmed.Contains("salary", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("payslip", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (Regex.IsMatch(trimmed, @"[A-Z][A-Za-z0-9&.'\-/ ]{2,50}"))
+            {
+                return trimmed;
+            }
+        }
+
+        var fileNameWithoutSeparators = Regex.Replace(fileName, "[-_]+", " ");
+        return string.IsNullOrWhiteSpace(fileNameWithoutSeparators) ? "UnknownEmployer" : fileNameWithoutSeparators;
+    }
+
+    private static string ExtractPeriod(string text, string fileName)
+    {
+        var patterns = new[]
+        {
+            @"\b(?:0?[1-9]|[12][0-9]|3[01])[/-](?:0?[1-9]|1[0-2])[/-](?:19|20)\d{2}\b",
+            @"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)[\s,]+(?:19|20)\d{2}\b",
+            @"\b(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12][0-9]|3[01])\b",
+            @"\b(?:0?[1-9]|1[0-2])[/-](?:19|20)\d{2}\b"
+        };
+
+        foreach (var pattern in patterns)
+        {
+            var match = Regex.Match(text, pattern, RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                return match.Value;
+            }
+        }
+
+        var fileMatch = Regex.Match(fileName, @"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[A-Za-z]*[-_ ]?(?:19|20)\d{2}", RegexOptions.IgnoreCase);
+        if (fileMatch.Success)
+        {
+            return fileMatch.Value;
+        }
+
+        return "UnknownPeriod";
+    }
+
+    private static string NormalizeWhitespace(string value)
+    {
+        return Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim();
+    }
+
+    private static string SanitizeForFileName(string value)
+    {
+        var sanitized = Regex.Replace(value ?? "Unknown", @"[<>:""/\\|?*]+", " ");
+        sanitized = sanitized.Replace("/", " ").Replace("\\", " ");
+        sanitized = Regex.Replace(sanitized, @"\s+", " ").Trim();
+        sanitized = sanitized.Trim('.', ' ', '-', '_');
+
+        return string.IsNullOrWhiteSpace(sanitized) ? "Unknown" : sanitized;
+    }
+
+    private sealed record DocumentClassification(string DocumentTypeName, string FolderName, string EmployerName, string Period);
+}

@@ -1,0 +1,12 @@
+Improve MRZ parsing, rescue flow, and UX
+
+- Tighten MRZ name cleanup and compact-date expiry parsing to remove filler tokens
+	and avoid DOB/expiry misclassification.
+- Add interactive Needs Review prompt and auto-rescue for small batches (<=5).
+- Prefer `Rental` classification during rescue and require strong tenancy signals
+	(filename/text keywords) to avoid misplacing tenancy PDFs into ID folders.
+- Add conservative name validation and safer move/duplicate handling.
+- Add `Rental Documents` handling and rescue logic improvements.
+- Add README with setup/build/run instructions and publish a single-file exe (zip).
+
+Validated by local runs on Scenario 1; built and published artifacts.
