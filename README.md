@@ -99,3 +99,4 @@ Then enter the folder path to organize.
 - The app moves recognized files into folders such as `Salary Slip`, `ID Docs`, and `Bank Statements`.
 - Duplicate files are placed in a `Duplicate Files` folder.
 - Expired IDs are moved to a folder named like `Name-Expired-Documents`.
+- Salary slips with separate `Month` and `Pay Date` columns use those two valid dates as period boundaries in chronological order. Employee names are only used when identified by an explicit name label; otherwise the slip is sent to `Needs Review`.

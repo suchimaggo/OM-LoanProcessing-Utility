@@ -289,7 +289,7 @@ class Program
 
     static void ProcessSalarySlip(string directoryPath, string filePath, string extractedText)
     {
-        string? employeeName = ExtractPersonName(extractedText, Path.GetFileNameWithoutExtension(filePath));
+        string? employeeName = ExtractSalarySlipEmployeeName(extractedText);
         Console.WriteLine($"  [DEBUG] ExtractPersonName result: '{employeeName ?? "<null>"}'");
         if (!IsLikelyValidPersonName(employeeName))
         {
@@ -322,6 +322,19 @@ class Program
     }
 
     #endregion
+
+    static string? ExtractSalarySlipEmployeeName(string text)
+    {
+        var match = Regex.Match(
+            text,
+            @"(?:Employee\s*Name|Payee|Member\s*Name|Customer\s*Name|(?<!\w)Name)\s*[:\-]\s*([A-Z][A-Za-z'\-\.]+(?:\s+[A-Z][A-Za-z'\-\.]+){1,3})(?![A-Za-z'\-\.])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success)
+            return null;
+
+        var candidate = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(match.Groups[1].Value.ToLowerInvariant());
+        return IsLikelyValidPersonName(candidate) ? candidate : null;
+    }
 
     #region Rental Documents
 
@@ -1419,6 +1432,29 @@ class Program
                 return (start, end);
             }
         }
+
+        var payDateIndex = text.IndexOf("Pay Date", StringComparison.OrdinalIgnoreCase);
+        if (payDateIndex >= 0)
+        {
+            var monthIndex = text.IndexOf("Month", payDateIndex, StringComparison.OrdinalIgnoreCase);
+            if (monthIndex >= 0 && monthIndex - payDateIndex <= 120)
+            {
+                var dateSectionLength = Math.Min(120, text.Length - monthIndex);
+                var dateSection = text.Substring(monthIndex, dateSectionLength);
+                var dates = Regex.Matches(dateSection, @"\d{1,2}[-\/.][A-Za-z0-9]+[-\/.]\d{4}")
+                    .Select(match => match.Value)
+                    .Distinct(StringComparer.Ordinal)
+                    .Select(value => TryParseFlexibleDate(value, out var parsed) ? parsed : (DateTime?)null)
+                    .Where(value => value.HasValue)
+                    .Select(value => value!.Value)
+                    .Order()
+                    .ToArray();
+
+                if (dates.Length == 2)
+                    return (dates[0], dates[1]);
+            }
+        }
+
 
         return (null, null);
     }
