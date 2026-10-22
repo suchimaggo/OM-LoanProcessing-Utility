@@ -407,6 +407,76 @@ class Program
 
     #endregion
 
+    static void ProcessAtoStatement(string directoryPath, string filePath, string extractedText)
+    {
+        string fileName = Path.GetFileName(filePath);
+        string fileStem = Path.GetFileNameWithoutExtension(filePath);
+        string extension = Path.GetExtension(filePath);
+        string combined = $"{extractedText}\n{fileName}";
+
+        string? documentType = null;
+        if (Regex.IsMatch(combined, @"\bnotice of assessment\b", RegexOptions.IgnoreCase))
+            documentType = "Notice-of-Assessment";
+        else if (Regex.IsMatch(combined, @"\b(income statement|payment summary)\b", RegexOptions.IgnoreCase))
+            documentType = "Income-Statement";
+        else if (Regex.IsMatch(combined, @"\btax return\b", RegexOptions.IgnoreCase))
+            documentType = "Tax-Return";
+        else if (Regex.IsMatch(combined, @"\baccount statement\b", RegexOptions.IgnoreCase))
+            documentType = "Account-Statement";
+
+        string? financialYear = ExtractFinancialYear(combined);
+        string destinationName;
+        string reason;
+        if (documentType is not null && financialYear is not null)
+        {
+            destinationName = $"ATO-{documentType}-FY{financialYear}{extension}";
+            reason = $"ATO document type and financial year detected ({documentType}, FY{financialYear}).";
+        }
+        else
+        {
+            string safeStem = ToSafeFileName(fileStem);
+            if (string.IsNullOrWhiteSpace(safeStem)) safeStem = "Unclassified";
+            destinationName = $"ATO-Statement-Review-{safeStem}{extension}";
+            reason = "ATO statement detected, but document type or financial year was unclear.";
+        }
+
+        string targetDirectory = Path.Combine(directoryPath, "ATO Statements");
+        string destinationPath = Path.Combine(targetDirectory, destinationName);
+        MoveFileWithDuplicateCheck(filePath, destinationPath, directoryPath, reason);
+    }
+
+    static string? ExtractFinancialYear(string text)
+    {
+        var match = Regex.Match(
+            text,
+            @"\b(?:FY|financial year|income year)\s*(20\d{2})\s*[-/]\s*(\d{2}|20\d{2})\b",
+            RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            int startYear = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+            string endText = match.Groups[2].Value;
+            int endYear = endText.Length == 2
+                ? (startYear / 100 * 100) + int.Parse(endText, CultureInfo.InvariantCulture)
+                : int.Parse(endText, CultureInfo.InvariantCulture);
+            if (endYear == startYear + 1 && startYear >= 2000 && endYear <= DateTime.Today.Year + 1)
+                return $"{startYear}-{endYear}";
+        }
+
+        match = Regex.Match(
+            text,
+            @"\b(?:financial year|income year)(?:\s+ended|\s+ending)?\s+(?:30\s+June\s+)?(20\d{2})\b",
+            RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            int endYear = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+            int startYear = endYear - 1;
+            if (startYear >= 2000 && endYear <= DateTime.Today.Year + 1)
+                return $"{startYear}-{endYear}";
+        }
+
+        return null;
+    }
+
     static bool IsLikelyValidPersonName(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return false;
