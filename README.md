@@ -42,14 +42,20 @@ dotnet run --project LoanProcessing-Utility.csproj -c Release
 ```
 
 ## Run (non-interactive)
-Process a specific folder (piped path):
+Process and apply changes to a specific folder:
 ```powershell
-echo "C:\Path\To\Folder" | dotnet run --project LoanProcessing-Utility.csproj -c Release
+dotnet run --project LoanProcessing-Utility.csproj -c Release -- --process-folder "C:\Path\To\Folder" --apply
 ```
+
+Undo the most recent applied run:
+```powershell
+dotnet run --project LoanProcessing-Utility.csproj -c Release -- --undo-last-run "C:\Path\To\Folder" --apply
+```
+Undo restores only unchanged files to unoccupied original paths. It uses the journal in `.loan-processing\Runs` and does not fall back to older runs.
 
 ## Rescue Needs Review
 ```powershell
-echo "C:\Path\To\Folder" | dotnet run --project LoanProcessing-Utility.csproj -c Release -- --rescue-needs-review
+dotnet run --project LoanProcessing-Utility.csproj -c Release -- --rescue-needs-review "C:\Path\To\Folder"
 ```
 
 ## Publish single-file executable (optional)
@@ -99,4 +105,4 @@ Then enter the folder path to organize.
 - The app moves recognized files into folders such as `Salary Slip`, `ID Docs`, and `Bank Statements`.
 - Duplicate files are placed in a `Duplicate Files` folder.
 - Expired IDs are moved to a folder named like `Name-Expired-Documents`.
-- Salary slips with separate `Month` and `Pay Date` columns use those two valid dates as period boundaries in chronological order. Employee names are only used when identified by an explicit name label; otherwise the slip is sent to `Needs Review`.
+- Salary slips with separate `Month` and `Pay Date` columns use those two valid dates as period boundaries in chronological order. Employee names can be read from explicit name labels or payroll tables with `Emp No.` and `Name` columns; otherwise the slip is sent to `Needs Review`.
